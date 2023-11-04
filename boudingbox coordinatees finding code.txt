@@ -1,0 +1,36 @@
+import cv2
+
+ # Initialize the cod list outside the function
+cod = [] 
+def click_call(event, x, y, flags, param):
+    
+    global img
+    if event == cv2.EVENT_LBUTTONDOWN:
+        cood = f"({x},{y})"
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        line_type = cv2.LINE_AA
+
+        img = cv2.putText(img, cood, (x, y), font, 0.9, (255, 0, 255), 3, lineType=line_type)
+        cv2.circle(img, (x, y), 5, (0, 255, 0), -1, lineType=line_type)
+        cv2.imshow("win", img)
+        cod.append((x, y))
+
+        if len(cod) >= 2:
+            cv2.line(img, cod[-2], cod[-1], (60, 190, 255), 5)  # Corrected line drawing code
+            cv2.imshow("win", img)
+    elif event == cv2.EVENT_RBUTTONDOWN:
+        cod.clear()
+            
+            
+height = 480
+width = 640
+          
+
+img = cv2.imread("hh.png", 1)
+img = cv2.resize(img, (width, height))   
+cv2.imshow('win', img)
+cv2.setMouseCallback('win', click_call)
+
+cv2.waitKey(0)
+cv2.destroyAllWindows()
+print(cod)

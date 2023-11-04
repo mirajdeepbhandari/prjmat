@@ -1,0 +1,156 @@
+import cv2
+import numpy as np
+import math
+import pyshine 
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+
+# Load YOLO
+net = cv2.dnn.readNet("park.weights", "park.cfg")
+classes = []
+with open("park.names", "r") as f:
+    classes = [line.strip() for line in f.readlines()]
+layer_names = net.getUnconnectedOutLayersNames()
+colors = [(0, 255, 0), (0, 0, 255)]  # Red and green color for boxes
+
+total_parking_slots = 5
+
+url = 'test.mp4'
+cap = cv2.VideoCapture(url)
+
+# Check if the video capture object was opened successfully
+if not cap.isOpened():
+    print("Error: Could not open video.")
+    exit()
+
+loop_video = True  # Flag to control video looping
+
+while loop_video:
+    while cap.isOpened():
+        ret, frame = cap.read()
+        free_parking_count = 0
+        if not ret:
+            # Reached the end of the video, so loop back to the beginning
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            continue
+
+        # Set the desired height and width
+        height = 820
+        width = 400
+
+        frame = cv2.resize(frame, (width, height))
+
+        # Create a transparent overlay for drawing
+        overlay = frame.copy()
+
+        blob = cv2.dnn.blobFromImage(frame, 0.00392, (416, 416), swapRB=True, crop=False)
+        net.setInput(blob)
+        outs = net.forward(layer_names)
+
+        class_ids = []
+        confidences = []
+        boxes = []
+
+        for out in outs:
+            for detection in out:
+                scores = detection[5:]
+                class_id = np.argmax(scores)
+                confidence = scores[class_id]
+                if confidence > 0.5:
+                    center_x = int(detection[0] * width)
+                    center_y = int(detection[1] * height)
+                    w = int(detection[2] * width)
+                    h = int(detection[3] * height)
+                    x = int(center_x - w / 2)
+                    y = int(center_y - h / 2)
+                    boxes.append([x, y, w, h])
+                    confidences.append(float(confidence))
+                    class_ids.append(class_id)
+
+        indexes = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
+
+        # Draw rectangles for parking spaces
+        parking_spaces = [(115, 682, 253, 575),
+                          (114, 556, 252, 467),
+                          (116, 443, 261, 368),
+                          (118, 354, 258, 255),
+                          (124, 247, 254, 143)]
+
+        center_list = []
+
+
+        num = 0  # Initialize the variable to count available parking spaces for this frame
+
+        for space in parking_spaces:
+            x1, y1, x2, y2 = space
+            cv2.rectangle(overlay, (x1, y1), (x2, y2), (70, 255, 0), -1)
+            center_x = (x1 + x2) / 2
+            center_y = (y1 + y2) / 2
+            center_list.append((center_x, center_y))
+
+        park_space_boxes = []
+        for i in range(len(boxes)):
+            if i in indexes:
+                # Check if the detected space is free
+                if class_ids[i] == 0:  # 0 corresponds to a free space
+                    free_parking_count += 1
+
+                if class_ids[i] == 1:
+                    park_space_boxes.append(boxes[i])
+
+        for j in park_space_boxes:
+            x1, y1, w, h = j
+
+            X1 = x1
+            Y1 = y1
+            X2 = x1 + w
+            Y2 = y1 + h
+
+            center_x = (X1 + X2) / 2
+            center_y = (Y1 + Y2) / 2
+
+            for index, org_center in enumerate(center_list):
+                m1, n1 = center_x, center_y
+                m2, n2 = org_center
+
+                distance = math.sqrt((m2 - m1) ** 2 + (n2 - n1) ** 2)
+
+                if distance < 40:  # Tune the threshold
+                    xx1, yy1, xx2, yy2 = parking_spaces[index]
+                    cv2.rectangle(overlay, (xx1, yy1), (xx2, yy2), (50, 0, 255), -1)
+                    num += 1  # Increase the count of available parking spaces for this frame
+
+
+        text='Parking Spaces Available: ' + str(5-num) + '/5'
+        frame=pyshine.putBText(frame,text,text_offset_x=30,
+                          text_offset_y=30,
+                          vspace=10,
+                          hspace=10,
+                          font_scale=0.7,
+                          background_RGB= (148, 3, 252),
+                          text_RGB=(255, 255, 255),
+                          thickness=1,
+                          alpha=0.2)
+
+        
+       
+
+        # Blend the overlay with the original frame using alpha blending
+        alpha = 0.5  # Opacity level (0.0 for fully transparent, 1.0 for fully opaque)
+        cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
+
+        cv2.imshow('winname', frame)  # Show the resized frame
+
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q'):
+            loop_video = False  # Exit the video loop if 'q' is pressed
+            break
+
+        # Check if the window was closed by the user
+        if cv2.getWindowProperty('winname', cv2.WND_PROP_VISIBLE) < 1:
+            loop_video = False  # Exit the video loop if the window is closed
+            break
+
+# Release the video capture object and close the window
+cap.release()
+cv2.destroyAllWindows()
